@@ -29,7 +29,8 @@ int allow_termianl(const char *mac, const char *token, bool temporary);
 void termianl_temppass_init();
 int deny_termianl(const char *mac);
 int allow_destip(const char *ip);
-
 int urlencode(char *buf, int blen, const char *src, int slen);
+int ubus_init();
+void start_check_internet();
 
 #endif

@@ -29,10 +29,15 @@
 #include <libubox/ulog.h>
 #include <libubox/avl-cmp.h>
 #include <libubox/avl.h>
+#include <libubus.h>
 #include "utils.h"
+#include "config.h"
 
 #define TEMPPASS_TIME  5000
+#define CHECK_INTERNET_TIME 5000
+
 static struct avl_tree temppass_tree;
+static struct ubus_context *ubus_ctx;
 
 struct termianl_temppass {
     char mac[18];
@@ -262,4 +267,65 @@ int urlencode(char *buf, int blen, const char *src, int slen)
     if (i == slen)
         buf[slen] = 0;
     return (i == slen) ? len : -1;
+}
+
+int ubus_init()
+{
+    ubus_ctx = ubus_connect(NULL);
+    if (!ubus_ctx) {
+        ULOG_ERR("Failed to connect to ubus\n");
+        return -1;
+    }
+    ubus_add_uloop(ubus_ctx);
+    return 0;
+}
+
+enum {
+    PINGCHECK_STATUS,
+
+};
+
+static const struct blobmsg_policy pingcheck_policy[1] = {
+    [PINGCHECK_STATUS] = { .name = "status", .type = BLOBMSG_TYPE_STRING },
+};
+
+static void fetch_internet_status(struct ubus_request *req, int type, struct blob_attr *msg)
+{
+    struct blob_attr *tb[1];
+    struct config *conf = get_config();
+
+    blobmsg_parse(pingcheck_policy, 1, tb, blob_data(msg), blob_len(msg));
+
+    if (tb[PINGCHECK_STATUS]) {
+        if (!strcmp(blobmsg_get_string(tb[PINGCHECK_STATUS]), "ONLINE")) {
+            ULOG_INFO("Internet online\n");
+            enable_kmod(true, conf->gw_interface, conf->gw_port, conf->gw_ssl_port);
+            return;
+        }
+    }
+    enable_kmod(false, NULL, 0, 0);
+    ULOG_INFO("Internet offline\n");
+}
+
+static void check_internet_cb(struct uloop_timeout *t)
+{
+    uint32_t id;
+
+    uloop_timeout_set(t, CHECK_INTERNET_TIME);
+
+    if (ubus_lookup_id(ubus_ctx, "pingcheck", &id)) {
+        ULOG_ERR("Failed to look up pingcheck object\n");
+        return;
+    }
+
+    ubus_invoke(ubus_ctx, id, "status", NULL, fetch_internet_status, NULL, 3000);
+}
+
+void start_check_internet()
+{
+    static struct uloop_timeout timeout = {
+        .cb = check_internet_cb
+    };
+
+    uloop_timeout_set(&timeout, 0);
 }

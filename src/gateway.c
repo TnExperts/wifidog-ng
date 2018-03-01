@@ -20,6 +20,7 @@
 
 #include "config.h"
 #include "auth.h"
+#include "utils.h"
 
 int main(int argc, char **argv)
 {
@@ -28,7 +29,11 @@ int main(int argc, char **argv)
     
     uloop_init();
 
-    auth_init();
+    if (ubus_init())
+        return -1;
+
+    if (auth_init())
+        return -1;
     
     uloop_run();
 
